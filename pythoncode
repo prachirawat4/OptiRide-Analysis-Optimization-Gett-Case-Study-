@@ -6,29 +6,27 @@ import folium
 from folium.plugins import HeatMap
 import numpy as np
 
-# ==========================================
-# 1. Data Loading & Preprocessing
-# ==========================================
 
-# Load datasets
+# 1. Data Loading & Preprocessing
+
+
+
 orders_df = pd.read_csv('data_orders.csv')
 offers_df = pd.read_csv('data_offers.csv')
 
-# Parse datetime
+
 orders_df['order_datetime'] = pd.to_datetime(orders_df['order_datetime'])
 orders_df['hour'] = orders_df['order_datetime'].dt.hour
 
-# Merge to check which rejected orders had offers
-# We only care if the order exists in offers_df, not the specific offer_id count yet
+
 offers_unique = offers_df['order_gk'].unique()
 orders_df['has_offer'] = orders_df['order_gk'].isin(offers_unique).astype(int)
 
-# Filter for failed orders (Status 4: Client Cancel, Status 9: System Reject)
+
 failed_orders = orders_df[orders_df['order_status_key'].isin([4, 9])].copy()
 
-# ==========================================
+
 # 2. Categorizing Failure Reasons
-# ==========================================
 
 def categorize_failure(row):
     if row['order_status_key'] == 4:
@@ -56,9 +54,8 @@ plt.show()
 
 print(failed_orders['failure_category'].value_counts())
 
-# ==========================================
+
 # 3. Temporal Analysis (Failures by Hour)
-# ==========================================
 
 # Task 2: Distribution of failed orders by hours
 plt.figure(figsize=(12, 6))
@@ -69,20 +66,16 @@ plt.xlabel('Hour')
 plt.legend(title='Failure Category')
 plt.show()
 
-# Insight: Look for spikes in "System Reject" during peak commute hours (8am, 6pm)
 
-# ==========================================
 # 4. Cancellation Time Analysis
-# ==========================================
 
-# Task 3: Average time to cancellation with and without driver, by hour
-# First, remove outliers (e.g., keeping 99th percentile)
+
 q_hi = failed_orders['cancellations_time_in_seconds'].quantile(0.99)
 clean_time_df = failed_orders[failed_orders['cancellations_time_in_seconds'] < q_hi]
 
 avg_cancel_time = clean_time_df.groupby(['hour', 'failure_category'])['cancellations_time_in_seconds'].mean().reset_index()
 
-# Filter only for Client Cancellations (since system rejects usually don't have this metric populated the same way)
+
 cancel_categories = ['Client Cancel (With Driver)', 'Client Cancel (No Driver)']
 avg_cancel_time_plot = avg_cancel_time[avg_cancel_time['failure_category'].isin(cancel_categories)]
 
@@ -94,9 +87,9 @@ plt.xlabel('Hour')
 plt.grid(True)
 plt.show()
 
-# ==========================================
+
 # 5. ETA Analysis
-# ==========================================
+
 
 # Task 4: Distribution of average ETA by hours
 # Ensure we look at valid ETAs (drop NaNs)
@@ -111,38 +104,37 @@ plt.xlabel('Hour')
 plt.grid(True)
 plt.show()
 
-# ==========================================
+
 # 6. BONUS: Hexagon & Geospatial Analysis
-# ==========================================
+
 
 # Task 5: H3 Hexagons
-# Create a function to map lat/lon to H3 hex
+
 def get_hex(row):
     return h3.geo_to_h3(row['origin_latitude'], row['origin_longitude'], resolution=8)
 
 failed_orders['hex_id'] = failed_orders.apply(get_hex, axis=1)
 
-# Count failures per hex
+
 hex_counts = failed_orders['hex_id'].value_counts().reset_index()
 hex_counts.columns = ['hex_id', 'count']
 
-# Calculate how many hexes contain 80% of failures
+
 total_failures = hex_counts['count'].sum()
 hex_counts['cumulative_percent'] = hex_counts['count'].cumsum() / total_failures
 
-# Find the cutoff index for 80%
+
 cutoff_index = hex_counts[hex_counts['cumulative_percent'] <= 0.80].index.max()
 top_hexes = hex_counts.iloc[:cutoff_index + 1]
 
 print(f"Total Hexagons: {len(hex_counts)}")
 print(f"Hexagons containing 80% of failures: {len(top_hexes)}")
 
-# Visualization with Folium
-# Center map on the mean location
+
 map_center = [failed_orders['origin_latitude'].mean(), failed_orders['origin_longitude'].mean()]
 m = folium.Map(location=map_center, zoom_start=12)
 
-# Plot the top hexes
+
 for _, row in top_hexes.iterrows():
     # Get geometry of the hex
     hex_boundary = h3.h3_to_geo_boundary(row['hex_id'])
@@ -156,6 +148,5 @@ for _, row in top_hexes.iterrows():
         popup=f"Failures: {row['count']}"
     ).add_to(m)
 
-# Save map
 m.save('failed_orders_heatmap.html')
 print("Map saved as failed_orders_heatmap.html")
